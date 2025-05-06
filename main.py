@@ -10,7 +10,7 @@ def get_message(text: str):
     <html>
         <body>
             <h2>Вы написали: {text}</h2>
-            <img src="/static/image.jpg" width="300">
+            <img src="/static/cat.jpg" width="300">
         </body>
     </html>
     """
