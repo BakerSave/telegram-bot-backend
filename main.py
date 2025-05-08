@@ -47,7 +47,7 @@ def get_message(text: str):
             <h3>🪵 Отладка: что реально отправилось в GPT</h3>
             <div style='background:#f0f0f0; padding:10px; border:1px solid #ccc;'>{history_debug}</div>
             <br>
-            <img src="/static/cat.jpg" width="300">
+            <img src="/static/psycho.jpg" width="300">
         </body>
     </html>
     """
