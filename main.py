@@ -44,7 +44,7 @@ def get_message(text: str):
         <body>
             <h2>Вы написали: {text}</h2>
             <p><b>Ответ GPT:</b> {reply}</p>
-            <h3>🪵 Отладка: что реально отправилось в GPT</h3>
+            <h3> Текущий переданный промпт GPT</h3>
             <div style='background:#f0f0f0; padding:10px; border:1px solid #ccc;'>{history_debug}</div>
             <br>
             <img src="/static/psycho.jpg" width="300">
