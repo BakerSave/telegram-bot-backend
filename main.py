@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
@@ -15,14 +15,6 @@ chat_history = []
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/message", response_class=HTMLResponse)
-from fastapi import Request
-
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    payload = await request.json()
-    print("Входящее сообщение от Telegram:", payload)
-    return {"ok": True}
-    
 def get_message(text: str):
     global chat_history
 
@@ -30,8 +22,7 @@ def get_message(text: str):
         chat_history.append({"role": "system", "content": "Ты дружелюбный помощник."})
 
     chat_history.append({"role": "user", "content": text})
-
-    print("📤 PROMPT to GPT:", chat_history)
+    print("PROMPT to GPT:", chat_history)
 
     try:
         response = openai.ChatCompletion.create(
@@ -59,3 +50,9 @@ def get_message(text: str):
         </body>
     </html>
     """
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    payload = await request.json()
+    print("Входящее сообщение от Telegram:", payload)
+    return {"ok": True}
