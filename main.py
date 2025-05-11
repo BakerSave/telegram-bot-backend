@@ -15,6 +15,14 @@ chat_history = []
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/message", response_class=HTMLResponse)
+from fastapi import Request
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    payload = await request.json()
+    print("Входящее сообщение от Telegram:", payload)
+    return {"ok": True}
+    
 def get_message(text: str):
     global chat_history
 
