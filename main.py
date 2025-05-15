@@ -5,18 +5,20 @@ from dotenv import load_dotenv
 import os
 import httpx
 
-# Загрузка переменных окружения
+# Загрузка переменных из .env
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
-telegram_token = os.getenv("TELEGRAM_TOKEN")  # Убедись, что он задан в Railway
+telegram_token = os.getenv("TELEGRAM_TOKEN")
 
 app = FastAPI()
-
-# Монтируем статику для картинки
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Хранилище истории диалогов (по chat_id)
-user_histories = {}  # chat_id: list of messages
+# Шаблонные system-промпты (можешь потом заменить на реальные)
+system_prompts = {
+    "шаблон1": "Ты ведёшь себя тепло и ласково.",
+    "шаблон2": "Ты отвечаешь резко, грубо и с раздражением.",
+    "шаблон3": "Ты говоришь сдержанно и нейтрально."
+}
 
 
 @app.post("/webhook")
@@ -28,38 +30,47 @@ async def telegram_webhook(request: Request):
         chat_id = payload["message"]["chat"]["id"]
         text = payload["message"]["text"]
 
-        reply = await get_gpt_reply(chat_id, text)
+        reply = await get_gpt_reply(text)
         await send_telegram_message(chat_id, reply)
 
     except Exception as e:
-        print("❌ Ошибка при обработке сообщения:", e)
+        print("❌ Ошибка при обработке:", e)
 
     return {"ok": True}
 
 
-async def get_gpt_reply(chat_id: int, text: str) -> str:
-    # Получаем или создаём историю пользователя
-    if chat_id not in user_histories:
-        user_histories[chat_id] = [
-            {"role": "system", "content": "Ты дружелюбный помощник."}
-        ]
+def detect_prompt_mode(text: str) -> str:
+    """Определяем шаблон по словам в сообщении."""
+    text = text.lower()
+    if any(word in text for word in ["милая", "умница", "классная", "люблю", "спасибо", "лапочка"]):
+        return "шаблон1"
+    if any(word in text for word in ["тварь", "идиот", "дура", "ненавижу", "бесишь", "отвратительно"]):
+        return "шаблон2"
+    return "шаблон3"  # Нейтральное
 
-    history = user_histories[chat_id]
 
-    # Добавляем пользовательское сообщение
-    history.append({"role": "user", "content": text})
-    print("📤 PROMPT to GPT:", history)
+async def get_gpt_reply(user_text: str) -> str:
+    # Выбор шаблона на основе текста
+    mode = detect_prompt_mode(user_text)
+    system_prompt = system_prompts[mode]
+
+    print(f"🧠 Выбран шаблон: {mode}")
+    print(f"📥 Сообщение: {user_text}")
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_text}
+    ]
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=history,
+            messages=messages,
         )
         reply = response["choices"][0]["message"]["content"]
-        history.append({"role": "assistant", "content": reply})
         return reply
     except Exception as e:
-        return f"Ошибка при обращении к GPT: {e}"
+        return f"⚠️ Ошибка GPT: {e}"
 
 
 async def send_telegram_message(chat_id: int, text: str):
