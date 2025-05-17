@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 import httpx
 
-# Загрузка переменных из .env
+# Загрузка переменных окружения
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 telegram_token = os.getenv("TELEGRAM_TOKEN")
@@ -13,11 +13,11 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Шаблонные system-промпты (можешь потом заменить на реальные)
+# System-промпты (ты можешь заменить на реальные позже)
 system_prompts = {
-    "шаблон1": "Ты ведёшь себя тепло и ласково.",
-    "шаблон2": "Ты отвечаешь резко, грубо и с раздражением.",
-    "шаблон3": "Ты говоришь сдержанно и нейтрально."
+    "шаблон1": "Ты ведёшь себя дружелюбно, мягко, ласково.",
+    "шаблон2": "Ты отвечаешь жёстко, раздражённо и немного грубо.",
+    "шаблон3": "Ты говоришь нейтрально, ровно и объективно."
 }
 
 
@@ -39,23 +39,13 @@ async def telegram_webhook(request: Request):
     return {"ok": True}
 
 
-def detect_prompt_mode(text: str) -> str:
-    """Определяем шаблон по словам в сообщении."""
-    text = text.lower()
-    if any(word in text for word in ["милая", "умница", "классная", "люблю", "спасибо", "лапочка"]):
-        return "шаблон1"
-    if any(word in text for word in ["тварь", "идиот", "дура", "ненавижу", "бесишь", "отвратительно"]):
-        return "шаблон2"
-    return "шаблон3"  # Нейтральное
-
-
 async def get_gpt_reply(user_text: str) -> str:
-    # Выбор шаблона на основе текста
-    mode = detect_prompt_mode(user_text)
-    system_prompt = system_prompts[mode]
+    # Сначала определим, как с ботом разговаривают
+    prompt_mode = await detect_prompt_mode_with_gpt(user_text)
+    system_prompt = system_prompts[prompt_mode]
 
-    print(f"🧠 Выбран шаблон: {mode}")
-    print(f"📥 Сообщение: {user_text}")
+    print(f"🧠 Тон сообщения: {prompt_mode}")
+    print(f"📥 Пользователь написал: {user_text}")
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -71,6 +61,32 @@ async def get_gpt_reply(user_text: str) -> str:
         return reply
     except Exception as e:
         return f"⚠️ Ошибка GPT: {e}"
+
+
+async def detect_prompt_mode_with_gpt(user_text: str) -> str:
+    """GPT сам оценивает, как с ним говорят: вежливо, агрессивно, нейтрально."""
+    classification_prompt = [
+        {"role": "system", "content": "Проанализируй тон этого сообщения. Ответь только одним словом: 'вежливое', 'агрессивное' или 'нейтральное'."},
+        {"role": "user", "content": user_text}
+    ]
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=classification_prompt,
+        )
+        result = response["choices"][0]["message"]["content"].strip().lower()
+        print(f"📊 GPT классифицировал как: {result}")
+
+        if "вежлив" in result:
+            return "шаблон1"
+        if "агресс" in result:
+            return "шаблон2"
+        return "шаблон3"
+
+    except Exception as e:
+        print("⚠️ Ошибка при классификации:", e)
+        return "шаблон3"
 
 
 async def send_telegram_message(chat_id: int, text: str):
