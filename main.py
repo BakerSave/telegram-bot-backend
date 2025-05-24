@@ -104,8 +104,8 @@ async def telegram_webhook(request: Request):
         now = time.time()
         last_user_activity[chat_id] = now
         chat_states.setdefault(chat_id, {
-        "history": [],
-        "ping_sent": False,
+            "history": [],
+            "ping_sent": False,
             "mask": "friendly",
             "name": None,
             "inflections": None,
@@ -114,7 +114,6 @@ async def telegram_webhook(request: Request):
         last_bot_ping.pop(chat_id, None)
         chat_states[chat_id]["ping_sent"] = False
 
-        # Имя
         lowered = text.lower()
         if any(p in lowered for p in ["меня зовут", "зови меня"]):
             words = text.split()
@@ -128,14 +127,10 @@ async def telegram_webhook(request: Request):
                 chat_states[chat_id]["name"] = name
                 chat_states[chat_id]["inflections"] = inflect_name(name)
 
-        # Обновить историю
         history = chat_states[chat_id]["history"]
         history.append({"role": "user", "content": text})
-
-        # Ограничение длины истории
         trim_history(chat_id)
 
-        # Определить маску
         if any(word in lowered for word in ["дура", "тупая", "тварь", "идиот"]):
             chat_states[chat_id]["mask"] = "rude"
         elif any(word in lowered for word in ["милая", "лапочка", "секси", "красотка", "классная"]):
@@ -145,7 +140,6 @@ async def telegram_webhook(request: Request):
 
         mask = chat_states[chat_id]["mask"]
         style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-
         messages = []
         apply_style(messages, style)
         messages += chat_states[chat_id]["history"]
@@ -156,7 +150,6 @@ async def telegram_webhook(request: Request):
         )
         reply = response["choices"][0]["message"]["content"]
         reply = insert_name(chat_id, reply)
-
         history.append({"role": "assistant", "content": reply})
         full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
         await send_telegram_message(chat_id, full_reply)
@@ -166,21 +159,20 @@ async def telegram_webhook(request: Request):
 
     return {"ok": True}
 
-
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(ping_loop())
 
 async def ping_loop():
     while True:
-        await asyncio.sleep(random.randint(5, 10))
+        await asyncio.sleep(random.randint(30, 45))
 
         now = time.time()
         for chat_id, last_time in last_user_activity.items():
             if chat_states[chat_id].get("ping_sent"):
                 continue
             since_last_msg = now - last_time
-            if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
+            if PING_MIN_DELAY <= since_last_msg <= PING_MAX_DELAY:
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
                 messages = []
                 apply_style(messages, style)
@@ -204,7 +196,6 @@ async def ping_loop():
                     chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
-
 
 async def send_telegram_message(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
