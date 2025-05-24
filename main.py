@@ -195,9 +195,7 @@ async def ping_loop():
                     )
                     reply = response["choices"][0]["message"]["content"]
                     reply = insert_name(chat_id, reply)
-                    full_reply = f"{reply}
-
-{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
+                    full_reply = f"{reply}\n\n{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
                     last_bot_ping[chat_id] = now
                     chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
