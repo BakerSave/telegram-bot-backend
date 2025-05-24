@@ -3,3 +3,4 @@ uvicorn
 openai==0.28.0
 python-dotenv
 httpx
+pip install pymorphy2
