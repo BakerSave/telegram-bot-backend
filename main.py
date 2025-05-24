@@ -64,6 +64,14 @@ def insert_name(chat_id, template: str) -> str:
         ins=f.get("ablt", "")
     )
 
+def apply_style(messages, style_json: str):
+    try:
+        parsed = json.loads(style_json)
+        messages.append({"role": "system", "content": "Вот пример общения, которому ты будешь следовать:"})
+        messages.extend(parsed)
+    except Exception as e:
+        print("⚠️ Ошибка парсинга style:", e)
+
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     payload = await request.json()
@@ -111,17 +119,10 @@ async def telegram_webhook(request: Request):
             chat_states[chat_id]["mask"] = "friendly"
 
         mask = chat_states[chat_id]["mask"]
-        system_prompt = ""
         style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
 
-        messages = [{"role": "system", "content": system_prompt}]
-
-        try:
-            parsed = json.loads(style)
-            messages.extend(parsed)
-        except Exception as e:
-            print("⚠️ Ошибка парсинга style:", e)
-
+        messages = []
+        apply_style(messages, style)
         messages += history
 
         response = openai.ChatCompletion.create(
@@ -158,16 +159,11 @@ async def ping_loop():
             if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
                 history = chat_states[chat_id]["history"]
                 mask = chat_states[chat_id]["mask"]
-                system_prompt = ""
                 name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
 
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-                messages = [{"role": "system", "content": system_prompt}]
-                try:
-                    parsed = json.loads(style)
-                    messages.extend(parsed)
-                except Exception as e:
-                    print("⚠️ Ошибка парсинга style:", e)
+                messages = []
+                apply_style(messages, style)
                 messages += history
                 messages.append({
                     "role": "user",
