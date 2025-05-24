@@ -45,6 +45,9 @@ last_bot_ping = {}
 PING_MIN_DELAY = 60
 PING_MAX_DELAY = 120
 
+# Максимальный объём истории в символах
+MAX_HISTORY_CHARS = 20000
+
 def inflect_name(name):
     parsed = morph.parse(name)[0]
     return {
@@ -71,6 +74,18 @@ def apply_style(messages, style_json: str):
         messages.extend(parsed)
     except Exception as e:
         print("⚠️ Ошибка парсинга style:", e)
+
+def trim_history(chat_id, max_chars=MAX_HISTORY_CHARS):
+    history = chat_states[chat_id]["history"]
+    total = 0
+    trimmed = []
+    for msg in reversed(history):
+        total += len(msg.get("content", ""))
+        trimmed.append(msg)
+        if total > max_chars:
+            break
+    trimmed = list(reversed(trimmed[:-1])) if total > max_chars else list(reversed(trimmed))
+    chat_states[chat_id]["history"] = trimmed
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
@@ -110,6 +125,9 @@ async def telegram_webhook(request: Request):
         history = chat_states[chat_id]["history"]
         history.append({"role": "user", "content": text})
 
+        # Ограничение длины истории
+        trim_history(chat_id)
+
         # Определить маску
         if any(word in lowered for word in ["дура", "тупая", "тварь", "идиот"]):
             chat_states[chat_id]["mask"] = "rude"
@@ -123,7 +141,7 @@ async def telegram_webhook(request: Request):
 
         messages = []
         apply_style(messages, style)
-        messages += history
+        messages += chat_states[chat_id]["history"]
 
         response = openai.ChatCompletion.create(
             model="gpt-4",
@@ -139,50 +157,4 @@ async def telegram_webhook(request: Request):
     except Exception as e:
         print("❌ Ошибка:", e)
 
-    return {"ok": True}
-
-async def send_telegram_message(chat_id: int, text: str):
-    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text}
-    async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload)
-
-async def ping_loop():
-    while True:
-        await asyncio.sleep(random.randint(5, 10))
-
-        now = time.time()
-        for chat_id, last_time in last_user_activity.items():
-            if chat_id in last_bot_ping:
-                continue
-            since_last_msg = now - last_time
-            if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
-                history = chat_states[chat_id]["history"]
-                mask = chat_states[chat_id]["mask"]
-                name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
-
-                style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-                messages = []
-                apply_style(messages, style)
-                messages += history
-                messages.append({
-                    "role": "user",
-                    "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"
-                })
-                try:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4",
-                        messages=messages
-                    )
-                    reply = response["choices"][0]["message"]["content"]
-                    reply = insert_name(chat_id, reply)
-                    full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
-                    await send_telegram_message(chat_id, full_reply)
-                    last_bot_ping[chat_id] = now
-                    chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
-                except Exception as e:
-                    print(f"❌ Ошибка при пинге {chat_id}: {e}")
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(ping_loop())
+    return {"ok": True} ...
