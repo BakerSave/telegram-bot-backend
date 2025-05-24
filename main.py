@@ -169,7 +169,10 @@ async def ping_loop():
 
         now = time.time()
         for chat_id, last_time in last_user_activity.items():
+            history = chat_states[chat_id]["history"]
             if chat_states[chat_id].get("ping_sent"):
+                continue
+            if not history or history[-1]["role"] != "assistant":
                 continue
             since_last_msg = now - last_time
             if PING_MIN_DELAY <= since_last_msg <= PING_MAX_DELAY:
