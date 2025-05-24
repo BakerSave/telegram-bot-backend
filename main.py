@@ -154,6 +154,7 @@ async def telegram_webhook(request: Request):
         history.append({"role": "assistant", "content": reply})
         full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
         await send_telegram_message(chat_id, full_reply)
+        chat_states[chat_id]["last_bot_reply"] = time.time()
 
     except Exception as e:
         print("❌ Ошибка:", e)
