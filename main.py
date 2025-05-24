@@ -157,4 +157,4 @@ async def telegram_webhook(request: Request):
     except Exception as e:
         print("❌ Ошибка:", e)
 
-    return {"ok": True} ...
+    return {"ok": True}
