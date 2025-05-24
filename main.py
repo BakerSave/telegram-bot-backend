@@ -7,6 +7,7 @@ import os
 import asyncio
 import random
 import time
+import json
 from pymorphy2 import MorphAnalyzer
 
 load_dotenv()
@@ -115,13 +116,11 @@ async def telegram_webhook(request: Request):
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        import json
-if style:
-    try:
-        parsed = json.loads(style)
-        messages.extend(parsed)
-    except Exception as e:
-        print("⚠️ Ошибка парсинга style:", e)
+        try:
+            parsed = json.loads(style)
+            messages.extend(parsed)
+        except Exception as e:
+            print("⚠️ Ошибка парсинга style:", e)
 
         messages += history
 
@@ -164,10 +163,11 @@ async def ping_loop():
 
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
                 messages = [{"role": "system", "content": system_prompt}]
-                if style:
-                    for line in style.strip().splitlines():
-                        if line.strip():
-                            messages.append({"role": "user", "content": line.strip()})
+                try:
+                    parsed = json.loads(style)
+                    messages.extend(parsed)
+                except Exception as e:
+                    print("⚠️ Ошибка парсинга style:", e)
                 messages += history
                 messages.append({
                     "role": "user",
