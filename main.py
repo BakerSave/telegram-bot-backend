@@ -105,10 +105,12 @@ async def telegram_webhook(request: Request):
             "mask": "friendly",
             "name": None,
             "inflections": None,
-            "style_learned": None
+            "style_learned": None,
+            "ping_sent": False
         })
 
         chat_states[chat_id]["last_user_message"] = now
+        chat_states[chat_id]["ping_sent"] = False
 
         lowered = text.lower()
         if any(p in lowered for p in ["меня зовут", "зови меня"]):
@@ -174,8 +176,9 @@ async def ping_loop():
 
             if not history or history[-1]["role"] != "assistant":
                 continue
+            if state.get("ping_sent"):
+                continue
 
-            # Пинговать, если бот давно не отвечал, и пользователь тоже молчит
             if since_reply >= PING_MIN_DELAY and since_user >= PING_MIN_DELAY:
                 try:
                     style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
@@ -195,8 +198,9 @@ async def ping_loop():
                     reply = insert_name(chat_id, reply)
                     full_reply = f"{reply}\n\n{masks[state['mask']]['emoji']} Маска: {state['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
-                    chat_states[chat_id]["last_bot_reply"] = now
-                    chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
+                    state["last_bot_reply"] = now
+                    state["ping_sent"] = True
+                    state["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
 
