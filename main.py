@@ -29,14 +29,14 @@ masks = {
 }
 
 # Дефолтный стиль общения (пример переписки)
-DEFAULT_STYLE_EXAMPLE = """
-хммм а раньше ж ты находил ее покупки
-ну лан
-да канеш
-капец сорян канеш
-такс, че как там у тебя с ботом
-ну там денег стоит. нууу каких-то
-"""
+DEFAULT_STYLE_EXAMPLE = """[
+    {"role": "user", "content": "ну че ты там"},
+    {"role": "assistant", "content": "да ниче лол"},
+    {"role": "user", "content": "опять пропал капец"},
+    {"role": "assistant", "content": "сорян канеш, ща тут"},
+    {"role": "user", "content": "че как с ботом там?"},
+    {"role": "assistant", "content": "ну работает норм вроде"}
+]"""
 
 # Таймеры для инициатив
 last_user_activity = {}
@@ -115,10 +115,13 @@ async def telegram_webhook(request: Request):
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        if style:
-            for line in style.strip().splitlines():
-                if line.strip():
-                    messages.append({"role": "user", "content": line.strip()})
+        import json
+if style:
+    try:
+        parsed = json.loads(style)
+        messages.extend(parsed)
+    except Exception as e:
+        print("⚠️ Ошибка парсинга style:", e)
 
         messages += history
 
@@ -172,7 +175,7 @@ async def ping_loop():
                 })
                 try:
                     response = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-4",
                         messages=messages
                     )
                     reply = response["choices"][0]["message"]["content"]
