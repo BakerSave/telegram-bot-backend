@@ -67,7 +67,7 @@ def insert_name(chat_id, template: str) -> str:
 def apply_style(messages, style_json: str):
     try:
         parsed = json.loads(style_json)
-        messages.append({"role": "system", "content": "Вот пример общения, которому ты будешь следовать:"})
+        messages.append({"role": "system", "content": "Ты ведёшь переписку в мессенджере. Продолжай диалог в том же стиле, что в примере ниже: без заглавных букв, с разговорной лексикой, с эмодзи, с 'лол', 'капец', 'канеш', 'ну'. Не отвечай как ассистент. Не будь официальным."})
         messages.extend(parsed)
     except Exception as e:
         print("⚠️ Ошибка парсинга style:", e)
