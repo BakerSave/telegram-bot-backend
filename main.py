@@ -104,13 +104,15 @@ async def telegram_webhook(request: Request):
         now = time.time()
         last_user_activity[chat_id] = now
         chat_states.setdefault(chat_id, {
-            "history": [],
+        "history": [],
+        "ping_sent": False,
             "mask": "friendly",
             "name": None,
             "inflections": None,
             "style_learned": None
         })
         last_bot_ping.pop(chat_id, None)
+        chat_states[chat_id]["ping_sent"] = False
 
         # Имя
         lowered = text.lower()
@@ -175,7 +177,7 @@ async def ping_loop():
 
         now = time.time()
         for chat_id, last_time in last_user_activity.items():
-            if chat_id in last_bot_ping:
+            if chat_states[chat_id].get("ping_sent"):
                 continue
             since_last_msg = now - last_time
             if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
@@ -198,6 +200,7 @@ async def ping_loop():
                     full_reply = f"{reply}\n\n{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
                     last_bot_ping[chat_id] = now
+                    chat_states[chat_id]["ping_sent"] = True
                     chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
