@@ -8,7 +8,12 @@ import asyncio
 import random
 import time
 import json
-from pymorphy2 import MorphAnalyzer
+
+try:
+    from pymorphy2 import MorphAnalyzer
+    morph = MorphAnalyzer()
+except ModuleNotFoundError:
+    morph = None
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -16,8 +21,6 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-morph = MorphAnalyzer()
 
 # Память чатов
 chat_states = {}
@@ -49,6 +52,8 @@ PING_MAX_DELAY = 120
 MAX_HISTORY_CHARS = 20000
 
 def inflect_name(name):
+    if not morph:
+        return {"nomn": name, "accs": name, "ablt": name}
     parsed = morph.parse(name)[0]
     return {
         "nomn": parsed.inflect({"nomn"}).word if parsed.inflect({"nomn"}) else name,
@@ -158,6 +163,46 @@ async def telegram_webhook(request: Request):
         print("❌ Ошибка:", e)
 
     return {"ok": True}
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(ping_loop())
+
+async def ping_loop():
+    while True:
+        await asyncio.sleep(random.randint(5, 10))
+
+        now = time.time()
+        for chat_id, last_time in last_user_activity.items():
+            if chat_id in last_bot_ping:
+                continue
+            since_last_msg = now - last_time
+            if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
+                style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
+                messages = []
+                apply_style(messages, style)
+                messages += chat_states[chat_id]["history"]
+                name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
+                messages.append({
+                    "role": "user",
+                    "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"
+                })
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=messages
+                    )
+                    reply = response["choices"][0]["message"]["content"]
+                    reply = insert_name(chat_id, reply)
+                    full_reply = f"{reply}
+
+{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
+                    await send_telegram_message(chat_id, full_reply)
+                    last_bot_ping[chat_id] = now
+                    chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
+                except Exception as e:
+                    print(f"❌ Ошибка при пинге {chat_id}: {e}")
 
 
 async def send_telegram_message(chat_id: int, text: str):
