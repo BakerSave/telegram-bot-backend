@@ -1,11 +1,13 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from dotenv import load_dotenv
 import openai
 import httpx
 import os
 import asyncio
 import random
-from dotenv import load_dotenv
+import time
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -14,74 +16,77 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-chat_histories = {}  # {chat_id: [{"role": ..., "content": ...}]}
-user_names = {}      # {chat_id: "Пёсик"}
+# Память чатов
+chat_states = {}
 
-# --- Промпты масок ---
-MASKS = {
-    "neutral": "Ты дружелюбный помощник. Обращайся на 'ты'.",
-    "flirty": "Ты кокетливая, игривая собеседница, говоришь непринуждённо, иногда флиртуешь.",
-    "rude": "Ты немного грубая, язвительная, но остроумная. Говоришь резко, но весело."
+# Маски (упрощены)
+masks = {
+    "friendly": {"emoji": "😊", "prompt": "Ты дружелюбный помощник."},
+    "flirty": {"emoji": "😉", "prompt": "Ты флиртующий собеседник."},
+    "rude": {"emoji": "😒", "prompt": "Ты немного грубый и дерзкий собеседник."},
 }
 
+# Таймеры для инициатив
+last_user_activity = {}
+last_bot_ping = {}
 
-def detect_mask(text: str) -> str:
-    lowered = text.lower()
-    if any(x in lowered for x in ["милая", "классная", "лапочка"]):
-        return "flirty"
-    if any(x in lowered for x in ["тупая", "тварь", "заткнись"]):
-        return "rude"
-    return "neutral"
-
-
-def update_user_name(chat_id: int, text: str):
-    lowered = text.lower()
-    if "зови меня" in lowered:
-        parts = lowered.split("зови меня")
-        if len(parts) > 1:
-            name = parts[1].strip().split()[0]
-            user_names[chat_id] = name.capitalize()
-
-
-def build_prompt(chat_id: int, text: str) -> list:
-    mask = detect_mask(text)
-    system_prompt = MASKS[mask]
-    history = chat_histories.get(chat_id, [])
-    return [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": text}]
+# Ограничение: 1–2 минуты
+PING_MIN_DELAY = 60
+PING_MAX_DELAY = 120
 
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     payload = await request.json()
-    message = payload.get("message")
-    if not message:
-        return {"ok": True}
-
-    chat_id = message["chat"]["id"]
-    text = message.get("text", "")
-
-    update_user_name(chat_id, text)
-    user_name = user_names.get(chat_id, None)
-
-    prompt = build_prompt(chat_id, text)
+    print("📩 INCOMING from Telegram:", payload)
 
     try:
+        chat_id = payload["message"]["chat"]["id"]
+        text = payload["message"]["text"]
+
+        now = time.time()
+        last_user_activity[chat_id] = now
+        chat_states.setdefault(chat_id, {"history": [], "mask": "friendly", "name": None})
+        last_bot_ping.pop(chat_id, None)  # сбросить таймер пинга
+
+        # Имя
+        if not chat_states[chat_id]["name"]:
+            if any(word.lower().startswith("меня зовут") for word in text.lower().split()):
+                name = text.split("зовут")[-1].strip().split()[0]
+                chat_states[chat_id]["name"] = name
+
+        # Обновить историю
+        history = chat_states[chat_id]["history"]
+        history.append({"role": "user", "content": text})
+
+        # Маску определим по содержимому
+        lowered = text.lower()
+        if any(word in lowered for word in ["дура", "тупая", "тварь", "идиот"]):
+            chat_states[chat_id]["mask"] = "rude"
+        elif any(word in lowered for word in ["милая", "лапочка", "секси", "красотка", "классная"]):
+            chat_states[chat_id]["mask"] = "flirty"
+        else:
+            chat_states[chat_id]["mask"] = "friendly"
+
+        mask = chat_states[chat_id]["mask"]
+        system_prompt = masks[mask]["prompt"]
+
+        # Запрос в GPT
+        messages = [{"role": "system", "content": system_prompt}] + history
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=prompt,
+            messages=messages
         )
         reply = response["choices"][0]["message"]["content"]
+        history.append({"role": "assistant", "content": reply})
+
+        mask_emoji = masks[mask]["emoji"]
+        full_reply = f"{reply}\n\n{mask_emoji} Маска: {mask.capitalize()}"
+        await send_telegram_message(chat_id, full_reply)
+
     except Exception as e:
-        reply = f"Ошибка: {e}"
-    
-    chat_histories.setdefault(chat_id, []).append({"role": "user", "content": text})
-    chat_histories[chat_id].append({"role": "assistant", "content": reply})
+        print("❌ Ошибка:", e)
 
-    # Вставить имя, если есть
-    if user_name:
-        reply = f"{user_name}, {reply}"
-
-    await send_telegram_message(chat_id, reply + f"\n\n🎭 Маска: {detect_mask(text).capitalize()}")
     return {"ok": True}
 
 
@@ -92,41 +97,42 @@ async def send_telegram_message(chat_id: int, text: str):
         await client.post(url, json=payload)
 
 
-#Автоинициатива
+# Автопинг
+async def ping_loop():
+    while True:
+        await asyncio.sleep(random.randint(5, 10))  # интервал между циклами проверки
 
-active_users = {}  # {chat_id: timestamp последнего сообщения}
+        now = time.time()
+        for chat_id, last_time in last_user_activity.items():
+            if chat_id in last_bot_ping:
+                continue  # уже пинговали, ждём ответа
+
+            since_last_msg = now - last_time
+            random_delay = random.randint(PING_MIN_DELAY, PING_MAX_DELAY)
+
+            if since_last_msg > random_delay:
+                history = chat_states[chat_id]["history"]
+                mask = chat_states[chat_id]["mask"]
+                system_prompt = masks[mask]["prompt"]
+                name = chat_states[chat_id]["name"] or "друг"
+
+                messages = [{"role": "system", "content": system_prompt}] + history
+                messages.append({"role": "user", "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"})
+
+                try:
+                    response = openai.ChatCompletion.create(
+                        model="gpt-3.5-turbo",
+                        messages=messages
+                    )
+                    reply = response["choices"][0]["message"]["content"]
+                    full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
+                    await send_telegram_message(chat_id, full_reply)
+                    last_bot_ping[chat_id] = now
+                    chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
+                except Exception as e:
+                    print(f"❌ Ошибка при пинге {chat_id}: {e}")
+
 
 @app.on_event("startup")
-async def start_auto_ping():
-    asyncio.create_task(auto_ping_loop())
-
-
-async def auto_ping_loop():
-    while True:
-        await asyncio.sleep(random.randint(60, 120))  # от 1 до 2 минут
-        for chat_id in active_users:
-            last_time = active_users[chat_id]
-            if asyncio.get_event_loop().time() - last_time > 60:  # > 1 минута
-                prompt = [{"role": "system", "content": MASKS["neutral"]},
-                          {"role": "user", "content": "Пользователь молчит. Напиши что-нибудь в тему."}]
-                try:
-                    response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=prompt)
-                    reply = response["choices"][0]["message"]["content"]
-                    await send_telegram_message(chat_id, reply + "\n\n🎭 Маска: Дружелюбный")
-                    active_users[chat_id] = asyncio.get_event_loop().time()
-                except:
-                    pass
-
-
-# обновлять активность
-@app.middleware("http")
-async def track_user_activity(request: Request, call_next):
-    if request.url.path == "/webhook":
-        body = await request.body()
-        try:
-            import json
-            chat_id = json.loads(body)["message"]["chat"]["id"]
-            active_users[chat_id] = asyncio.get_event_loop().time()
-        except:
-            pass
-    return await call_next(request)
+async def startup_event():
+    asyncio.create_task(ping_loop())
