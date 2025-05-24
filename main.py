@@ -170,16 +170,16 @@ async def ping_loop():
         for chat_id, state in chat_states.items():
             history = state["history"]
             last_reply = state.get("last_bot_reply", 0)
-            last_user_msg = state.get("last_user_message", 0)
             since_reply = now - last_reply
-            since_user = now - last_user_msg
+
+            print(f"[ping check] chat_id={chat_id} since_reply={since_reply:.1f} ping_sent={state.get('ping_sent')} last_msg={history[-1]['role']}")
 
             if not history or history[-1]["role"] != "assistant":
                 continue
             if state.get("ping_sent"):
                 continue
 
-            if since_reply >= PING_MIN_DELAY and since_user >= PING_MIN_DELAY:
+            if since_reply >= PING_MIN_DELAY:
                 try:
                     style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
                     messages = []
