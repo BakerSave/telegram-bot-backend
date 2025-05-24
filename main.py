@@ -110,7 +110,7 @@ async def telegram_webhook(request: Request):
             chat_states[chat_id]["mask"] = "friendly"
 
         mask = chat_states[chat_id]["mask"]
-        system_prompt = masks[mask]["prompt"]
+        system_prompt = ""
         style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -156,7 +156,7 @@ async def ping_loop():
             if since_last_msg > random.randint(PING_MIN_DELAY, PING_MAX_DELAY):
                 history = chat_states[chat_id]["history"]
                 mask = chat_states[chat_id]["mask"]
-                system_prompt = masks[mask]["prompt"]
+                system_prompt = ""
                 name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
 
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
