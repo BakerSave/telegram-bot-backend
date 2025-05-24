@@ -32,7 +32,6 @@ masks = {
     "rude": {"emoji": "😒", "prompt": "Ты немного грубый и дерзкий собеседник."},
 }
 
-# Дефолтный стиль общения (пример переписки)
 DEFAULT_STYLE_EXAMPLE = """[
     {"role": "user", "content": "ну че ты там"},
     {"role": "assistant", "content": "да ниче лол"},
@@ -43,12 +42,9 @@ DEFAULT_STYLE_EXAMPLE = """[
 ]"""
 
 # Таймеры для инициатив
-last_user_activity = {}
-last_bot_ping = {}
 PING_MIN_DELAY = 60
 PING_MAX_DELAY = 120
 
-# Максимальный объём истории в символах
 MAX_HISTORY_CHARS = 20000
 
 def inflect_name(name):
@@ -102,18 +98,17 @@ async def telegram_webhook(request: Request):
         text = payload["message"].get("text", "")
 
         now = time.time()
-        last_user_activity[chat_id] = now
         chat_states.setdefault(chat_id, {
-        "history": [],
-        "last_bot_reply": 0,
-            "ping_sent": False,
+            "history": [],
+            "last_bot_reply": 0,
+            "last_user_message": 0,
             "mask": "friendly",
             "name": None,
             "inflections": None,
             "style_learned": None
         })
-        last_bot_ping.pop(chat_id, None)
-        chat_states[chat_id]["ping_sent"] = False
+
+        chat_states[chat_id]["last_user_message"] = now
 
         lowered = text.lower()
         if any(p in lowered for p in ["меня зовут", "зови меня"]):
@@ -170,34 +165,37 @@ async def ping_loop():
         await asyncio.sleep(random.randint(30, 45))
 
         now = time.time()
-        for chat_id in chat_states:
-            history = chat_states[chat_id]["history"]
-            if chat_states[chat_id].get("ping_sent"):
-                continue
+        for chat_id, state in chat_states.items():
+            history = state["history"]
+            last_reply = state.get("last_bot_reply", 0)
+            last_user_msg = state.get("last_user_message", 0)
+            since_reply = now - last_reply
+            since_user = now - last_user_msg
+
             if not history or history[-1]["role"] != "assistant":
                 continue
-            since_last_msg = now - chat_states[chat_id].get("last_bot_reply", 0)
-            if PING_MIN_DELAY <= since_last_msg <= PING_MAX_DELAY:
-                style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-                messages = []
-                apply_style(messages, style)
-                messages += chat_states[chat_id]["history"]
-                name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
-                messages.append({
-                    "role": "user",
-                    "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"
-                })
+
+            # Пинговать, если бот давно не отвечал, и пользователь тоже молчит
+            if since_reply >= PING_MIN_DELAY and since_user >= PING_MIN_DELAY:
                 try:
+                    style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
+                    messages = []
+                    apply_style(messages, style)
+                    messages += state["history"]
+                    name = state.get("inflections", {}).get("nomn", "друг")
+                    messages.append({
+                        "role": "user",
+                        "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"
+                    })
                     response = openai.ChatCompletion.create(
                         model="gpt-4",
                         messages=messages
                     )
                     reply = response["choices"][0]["message"]["content"]
                     reply = insert_name(chat_id, reply)
-                    full_reply = f"{reply}\n\n{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
+                    full_reply = f"{reply}\n\n{masks[state['mask']]['emoji']} Маска: {state['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
                     chat_states[chat_id]["last_bot_reply"] = now
-                    chat_states[chat_id]["ping_sent"] = True
                     chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
