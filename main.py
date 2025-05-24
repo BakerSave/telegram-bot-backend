@@ -158,3 +158,10 @@ async def telegram_webhook(request: Request):
         print("❌ Ошибка:", e)
 
     return {"ok": True}
+
+
+async def send_telegram_message(chat_id: int, text: str):
+    url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    async with httpx.AsyncClient() as client:
+        await client.post(url, json=payload)
