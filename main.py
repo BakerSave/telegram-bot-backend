@@ -123,7 +123,7 @@ async def telegram_webhook(request: Request):
         messages += history
 
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=messages
         )
         reply = response["choices"][0]["message"]["content"]
