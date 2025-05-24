@@ -104,7 +104,8 @@ async def telegram_webhook(request: Request):
         now = time.time()
         last_user_activity[chat_id] = now
         chat_states.setdefault(chat_id, {
-            "history": [],
+        "history": [],
+        "last_bot_reply": 0,
             "ping_sent": False,
             "mask": "friendly",
             "name": None,
@@ -168,13 +169,13 @@ async def ping_loop():
         await asyncio.sleep(random.randint(30, 45))
 
         now = time.time()
-        for chat_id, last_time in last_user_activity.items():
+        for chat_id in chat_states:
             history = chat_states[chat_id]["history"]
             if chat_states[chat_id].get("ping_sent"):
                 continue
             if not history or history[-1]["role"] != "assistant":
                 continue
-            since_last_msg = now - last_time
+            since_last_msg = now - chat_states[chat_id].get("last_bot_reply", 0)
             if PING_MIN_DELAY <= since_last_msg <= PING_MAX_DELAY:
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
                 messages = []
@@ -194,7 +195,7 @@ async def ping_loop():
                     reply = insert_name(chat_id, reply)
                     full_reply = f"{reply}\n\n{masks[chat_states[chat_id]['mask']]['emoji']} Маска: {chat_states[chat_id]['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
-                    last_bot_ping[chat_id] = now
+                    chat_states[chat_id]["last_bot_reply"] = now
                     chat_states[chat_id]["ping_sent"] = True
                     chat_states[chat_id]["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
