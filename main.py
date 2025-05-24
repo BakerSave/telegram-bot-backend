@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 import openai
-from dotenv import load_dotenv
-import os
 import httpx
+import os
 import asyncio
-import time
 import random
+from dotenv import load_dotenv
 
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -15,102 +14,76 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+chat_histories = {}  # {chat_id: [{"role": ..., "content": ...}]}
+user_names = {}      # {chat_id: "Пёсик"}
+
+# --- Промпты масок ---
 MASKS = {
-    "flirt": {
-        "name": "Флирт",
-        "prompt": "Ты флиртуешь с собеседником. Общение лёгкое, игривое, с поддразниванием и улыбкой."
-    },
-    "rude": {
-        "name": "Грубый",
-        "prompt": "Ты говоришь резко, грубо, с раздражением и вызовом. Можешь саркастично шутить."
-    },
-    "friendly": {
-        "name": "Дружелюбный",
-        "prompt": "Ты общаешься мягко, поддерживающе, с юмором и сочувствием."
-    }
+    "neutral": "Ты дружелюбный помощник. Обращайся на 'ты'.",
+    "flirty": "Ты кокетливая, игривая собеседница, говоришь непринуждённо, иногда флиртуешь.",
+    "rude": "Ты немного грубая, язвительная, но остроумная. Говоришь резко, но весело."
 }
 
-user_styles = {}
-last_active = {}        # chat_id: timestamp
-was_pinged = {}         # chat_id: bool
-chat_histories = {}     # chat_id: list of messages
 
-@app.on_event("startup")
-async def start_background_task():
-    asyncio.create_task(background_checker())
+def detect_mask(text: str) -> str:
+    lowered = text.lower()
+    if any(x in lowered for x in ["милая", "классная", "лапочка"]):
+        return "flirty"
+    if any(x in lowered for x in ["тупая", "тварь", "заткнись"]):
+        return "rude"
+    return "neutral"
+
+
+def update_user_name(chat_id: int, text: str):
+    lowered = text.lower()
+    if "зови меня" in lowered:
+        parts = lowered.split("зови меня")
+        if len(parts) > 1:
+            name = parts[1].strip().split()[0]
+            user_names[chat_id] = name.capitalize()
+
+
+def build_prompt(chat_id: int, text: str) -> list:
+    mask = detect_mask(text)
+    system_prompt = MASKS[mask]
+    history = chat_histories.get(chat_id, [])
+    return [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": text}]
+
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     payload = await request.json()
-    chat_id = payload["message"]["chat"]["id"]
-    text = payload["message"]["text"].lower()
+    message = payload.get("message")
+    if not message:
+        return {"ok": True}
 
-    # Обновляем активность
-    last_active[chat_id] = time.time()
-    was_pinged[chat_id] = False
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
 
-    if chat_id not in chat_histories:
-        chat_histories[chat_id] = []
+    update_user_name(chat_id, text)
+    user_name = user_names.get(chat_id, None)
 
-    if text.startswith("/style"):
-        return await handle_style_command(chat_id, text)
+    prompt = build_prompt(chat_id, text)
 
-    if "фото" in text:
-        await save_message(chat_id, "user", text)
-        await save_message(chat_id, "assistant", "[фото]")
-        return await send_telegram_message(chat_id, "[фото]")
-
-    if any(w in text for w in ["видео", "кружок", "голос"]):
-        reply = await generate_media_denial(chat_id, text)
-        await save_message(chat_id, "user", text)
-        await save_message(chat_id, "assistant", reply)
-        return await send_telegram_message(chat_id, f"{reply}\n\n🎭 Маска: {MASKS[get_style(chat_id)]['name']}")
-
-    reply = await generate_reply(chat_id, text)
-    await save_message(chat_id, "user", text)
-    await save_message(chat_id, "assistant", reply)
-    return await send_telegram_message(chat_id, f"{reply}\n\n🎭 Маска: {MASKS[get_style(chat_id)]['name']}")
-
-async def handle_style_command(chat_id: int, text: str):
     try:
-        style_key = text.split(" ", 1)[1].strip()
-    except IndexError:
-        return await send_telegram_message(chat_id, "Укажи стиль: /style flirt | rude | friendly")
-
-    if style_key not in MASKS:
-        return await send_telegram_message(chat_id, "Неизвестный стиль. Возможные: flirt, rude, friendly")
-
-    user_styles[chat_id] = style_key
-    return await send_telegram_message(chat_id, f"✅ Маска переключена: {MASKS[style_key]['name']}")
-
-def get_style(chat_id: int) -> str:
-    return user_styles.get(chat_id, "friendly")
-
-async def generate_reply(chat_id: int, user_text: str) -> str:
-    style = get_style(chat_id)
-    prompt = MASKS[style]["prompt"]
-    messages = [{"role": "system", "content": prompt}] + chat_histories.get(chat_id, [])[-6:] + [
-        {"role": "user", "content": user_text}
-    ]
-    try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
-        return response["choices"][0]["message"]["content"]
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=prompt,
+        )
+        reply = response["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"⚠️ Ошибка GPT: {e}"
+        reply = f"Ошибка: {e}"
+    
+    chat_histories.setdefault(chat_id, []).append({"role": "user", "content": text})
+    chat_histories[chat_id].append({"role": "assistant", "content": reply})
 
-async def generate_media_denial(chat_id: int, user_text: str) -> str:
-    tone = MASKS[get_style(chat_id)]["prompt"]
-    instruction = (
-        "Тебя попросили отправить медиа (видео, кружок, голос). "
-        "Ты не можешь этого сделать. Ответь в стиле маски: " + tone +
-        " Намекни, отшутись или флиртуй, но не отправляй медиа."
-    )
-    messages = [{"role": "system", "content": instruction}, {"role": "user", "content": user_text}]
-    try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
-        return response["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"⚠️ Ошибка при отказе медиа: {e}"
+    # Вставить имя, если есть
+    if user_name:
+        reply = f"{user_name}, {reply}"
+
+    await send_telegram_message(chat_id, reply + f"\n\n🎭 Маска: {detect_mask(text).capitalize()}")
+    return {"ok": True}
+
 
 async def send_telegram_message(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
@@ -118,36 +91,42 @@ async def send_telegram_message(chat_id: int, text: str):
     async with httpx.AsyncClient() as client:
         await client.post(url, json=payload)
 
-async def save_message(chat_id: int, role: str, content: str):
-    if chat_id not in chat_histories:
-        chat_histories[chat_id] = []
-    chat_histories[chat_id].append({"role": role, "content": content})
 
-async def background_checker():
+#Автоинициатива
+
+active_users = {}  # {chat_id: timestamp последнего сообщения}
+
+@app.on_event("startup")
+async def start_auto_ping():
+    asyncio.create_task(auto_ping_loop())
+
+
+async def auto_ping_loop():
     while True:
-        now = time.time()
-        for chat_id, last_time in last_active.items():
-            if was_pinged.get(chat_id):
-                continue
+        await asyncio.sleep(random.randint(60, 120))  # от 1 до 2 минут
+        for chat_id in active_users:
+            last_time = active_users[chat_id]
+            if asyncio.get_event_loop().time() - last_time > 60:  # > 1 минута
+                prompt = [{"role": "system", "content": MASKS["neutral"]},
+                          {"role": "user", "content": "Пользователь молчит. Напиши что-нибудь в тему."}]
+                try:
+                    response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=prompt)
+                    reply = response["choices"][0]["message"]["content"]
+                    await send_telegram_message(chat_id, reply + "\n\n🎭 Маска: Дружелюбный")
+                    active_users[chat_id] = asyncio.get_event_loop().time()
+                except:
+                    pass
 
-            elapsed = now - last_time
-            random_delay = random.randint(60, 120)  # от 1 до 2 минут
 
-            if elapsed >= random_delay:
-                reply = await generate_ping(chat_id)
-                await send_telegram_message(chat_id, f"{reply}\n\n🎭 Маска: {MASKS[get_style(chat_id)]['name']}")
-                await save_message(chat_id, "assistant", reply)
-                was_pinged[chat_id] = True
-
-        await asyncio.sleep(30)
-
-async def generate_ping(chat_id: int) -> str:
-    prompt = MASKS[get_style(chat_id)]["prompt"]
-    messages = [{"role": "system", "content": prompt}] + chat_histories.get(chat_id, [])[-6:] + [
-        {"role": "user", "content": "Ты хочешь продолжить разговор, потому что пользователь молчит. Ответь в характерном стиле."}
-    ]
-    try:
-        response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
-        return response["choices"][0]["message"]["content"]
-    except Exception as e:
-        return f"🤖 (не смог пингануть): {e}"
+# обновлять активность
+@app.middleware("http")
+async def track_user_activity(request: Request, call_next):
+    if request.url.path == "/webhook":
+        body = await request.body()
+        try:
+            import json
+            chat_id = json.loads(body)["message"]["chat"]["id"]
+            active_users[chat_id] = asyncio.get_event_loop().time()
+        except:
+            pass
+    return await call_next(request)
