@@ -111,13 +111,16 @@ async def telegram_webhook(request: Request):
 
         mask = chat_states[chat_id]["mask"]
         system_prompt = masks[mask]["prompt"]
-
-        # Включить стиль: либо пользовательский, либо дефолтный
         style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-        if style:
-            system_prompt += f"\nВот как выглядит пример общения, которого я придерживаюсь:\n{style}"
 
-        messages = [{"role": "system", "content": system_prompt}] + history
+        messages = [{"role": "system", "content": system_prompt}]
+
+        if style:
+            for line in style.strip().splitlines():
+                if line.strip():
+                    messages.append({"role": "user", "content": line.strip()})
+
+        messages += history
 
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -157,10 +160,12 @@ async def ping_loop():
                 name = chat_states[chat_id].get("inflections", {}).get("nomn", "друг")
 
                 style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
+                messages = [{"role": "system", "content": system_prompt}]
                 if style:
-                    system_prompt += f"\nВот как выглядит пример общения, которого я придерживаюсь:\n{style}"
-
-                messages = [{"role": "system", "content": system_prompt}] + history
+                    for line in style.strip().splitlines():
+                        if line.strip():
+                            messages.append({"role": "user", "content": line.strip()})
+                messages += history
                 messages.append({
                     "role": "user",
                     "content": f"Ты давно молчишь с {name}. Напиши что-нибудь!"
