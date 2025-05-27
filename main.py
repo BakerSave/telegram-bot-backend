@@ -103,11 +103,11 @@ async def telegram_webhook(request: Request):
             "name": None,
             "inflections": None,
             "style_learned": None,
-            "ping_sent": False
+            "ping_sent_at": 0
         })
 
         chat_states[chat_id]["last_user_message"] = now
-        chat_states[chat_id]["ping_sent"] = False
+        chat_states[chat_id]["ping_sent_at"] = 0
 
         lowered = text.lower()
         if any(p in lowered for p in ["меня зовут", "зови меня"]):
@@ -149,6 +149,7 @@ async def telegram_webhook(request: Request):
         full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
         await send_telegram_message(chat_id, full_reply)
         chat_states[chat_id]["last_bot_reply"] = time.time()
+        chat_states[chat_id]["ping_sent_at"] = 0
 
     except Exception as e:
         print("❌ Ошибка:", e)
@@ -161,7 +162,7 @@ async def startup_event():
 
 async def ping_loop():
     while True:
-        await asyncio.sleep(random.randint(30, 45))
+        await asyncio.sleep(10)
 
         now = time.time()
         for chat_id, state in chat_states.items():
@@ -170,13 +171,14 @@ async def ping_loop():
                 continue
             if history[-1]["role"] != "assistant":
                 continue
-            if state.get("ping_sent"):
-                continue
 
             last_reply = state.get("last_bot_reply", 0)
-            since_reply = now - last_reply
+            ping_sent_at = state.get("ping_sent_at", 0)
 
-            if since_reply >= PING_MIN_DELAY:
+            since_reply = now - last_reply
+            since_ping = now - ping_sent_at if ping_sent_at else None
+
+            if since_reply >= PING_MIN_DELAY and (ping_sent_at == 0 or since_ping >= PING_MIN_DELAY):
                 print(f"[ping triggered] chat_id={chat_id}, silence for {since_reply:.1f}s")
                 try:
                     style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
@@ -197,7 +199,7 @@ async def ping_loop():
                     full_reply = f"{reply}\n\n{masks[state['mask']]['emoji']} Маска: {state['mask'].capitalize()}"
                     await send_telegram_message(chat_id, full_reply)
                     state["last_bot_reply"] = now
-                    state["ping_sent"] = True
+                    state["ping_sent_at"] = now
                     state["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
