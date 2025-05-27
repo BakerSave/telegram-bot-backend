@@ -22,10 +22,8 @@ telegram_token = os.getenv("TELEGRAM_TOKEN")
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Память чатов
 chat_states = {}
 
-# Маски
 masks = {
     "friendly": {"emoji": "😊", "prompt": "Ты дружелюбный помощник."},
     "flirty": {"emoji": "😉", "prompt": "Ты флиртующий собеседник."},
@@ -41,7 +39,6 @@ DEFAULT_STYLE_EXAMPLE = """[
     {"role": "assistant", "content": "ну работает норм вроде"}
 ]"""
 
-# Таймеры для инициатив
 PING_MIN_DELAY = 60
 PING_MAX_DELAY = 120
 
@@ -169,17 +166,18 @@ async def ping_loop():
         now = time.time()
         for chat_id, state in chat_states.items():
             history = state["history"]
-            last_reply = state.get("last_bot_reply", 0)
-            since_reply = now - last_reply
-
-            print(f"[ping check] chat_id={chat_id} since_reply={since_reply:.1f} ping_sent={state.get('ping_sent')} last_msg={history[-1]['role']}")
-
-            if not history or history[-1]["role"] != "assistant":
+            if not history:
+                continue
+            if history[-1]["role"] != "assistant":
                 continue
             if state.get("ping_sent"):
                 continue
 
+            last_reply = state.get("last_bot_reply", 0)
+            since_reply = now - last_reply
+
             if since_reply >= PING_MIN_DELAY:
+                print(f"[ping triggered] chat_id={chat_id}, silence for {since_reply:.1f}s")
                 try:
                     style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
                     messages = []
