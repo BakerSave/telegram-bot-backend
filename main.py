@@ -106,8 +106,7 @@ async def telegram_webhook(request: Request):
         for keyword, fake_media in media_keywords.items():
             if keyword in text.lower():
                 lead_in = random.choice(["лови", "держи", "смотри", "вот", "на"])
-                await send_telegram_message(chat_id, f"{lead_in}
-{fake_media}")
+                await send_telegram_message(chat_id, f"{lead_in}\n{fake_media}")
                 await asyncio.sleep(10)
                 follow_up = random.choice(["ещё хочешь?", "нравится?", "а тебе как?"])
                 await send_telegram_message(chat_id, follow_up)
