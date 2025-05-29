@@ -172,8 +172,6 @@ async def telegram_webhook(request: Request):
         reply = insert_name(chat_id, reply)
         history.append({"role": "assistant", "content": reply})
         full_reply = f"{reply}\n\nМаска: {mask}"
-
-Маска: {mask}"
         await send_telegram_message(chat_id, full_reply)
         chat_states[chat_id]["last_bot_reply"] = time.time()
         chat_states[chat_id]["ping_sent_at"] = 0
@@ -235,7 +233,6 @@ async def send_typing_action(chat_id: int):
     payload = {"chat_id": chat_id, "action": "typing"}
     async with httpx.AsyncClient() as client:
         await client.post(url, json=payload)
-
 
 async def send_telegram_message(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
