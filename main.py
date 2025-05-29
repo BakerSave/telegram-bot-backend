@@ -108,6 +108,9 @@ async def telegram_webhook(request: Request):
                 lead_in = random.choice(["лови", "держи", "смотри", "вот", "на"])
                 await send_telegram_message(chat_id, f"{lead_in}
 {fake_media}")
+                await asyncio.sleep(10)
+                follow_up = random.choice(["ещё хочешь?", "нравится?", "а тебе как?"])
+                await send_telegram_message(chat_id, follow_up)
                 return {"ok": True}
 
         now = time.time()
@@ -169,7 +172,7 @@ async def telegram_webhook(request: Request):
         await asyncio.sleep(delay)
         reply = insert_name(chat_id, reply)
         history.append({"role": "assistant", "content": reply})
-        full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
+        full_reply = reply
         await send_telegram_message(chat_id, full_reply)
         chat_states[chat_id]["last_bot_reply"] = time.time()
         chat_states[chat_id]["ping_sent_at"] = 0
