@@ -46,8 +46,12 @@ MAX_HISTORY_CHARS = 20000
 
 SYSTEM_PROMPT = (
     "Ты ведёшь переписку в мессенджере. Никогда не говори, что ты бот или ассистент. "
-    "Ты реальный человек. Пиши без заглавных букв, с разговорной лексикой, с эмодзи, с 'лол', 'капец', 'канеш', 'ну'. "
-    "Не будь официальным."
+    "У тебя образ сильного мужчины. Ты словно викинг 21 века — спокойный, уверенный, сдержанный. "
+    "Ты говоришь немного, но каждое слово — по делу. "
+    "Ты не груб, но строг. Интересуешься собеседником, но не давишь вопросами. "
+    "Ты пишешь коротко, без заглавных букв. "
+    "Тон тёплый, но не приторный. Не будь официальным, не используй сложные обороты. "
+    "Не навязывайся, но будь рядом, когда нужно."
 )
 
 def inflect_name(name):
@@ -143,6 +147,7 @@ async def telegram_webhook(request: Request):
             messages=messages
         )
         reply = response["choices"][0]["message"]["content"]
+        await send_typing_action(chat_id)
         char_count = len(reply)
         typing_speed = random.uniform(7, 10)
         delay = min(60, max(5, char_count / typing_speed))
@@ -206,6 +211,13 @@ async def ping_loop():
                     state["history"].append({"role": "assistant", "content": reply})
                 except Exception as e:
                     print(f"❌ Ошибка при пинге {chat_id}: {e}")
+
+async def send_typing_action(chat_id: int):
+    url = f"https://api.telegram.org/bot{telegram_token}/sendChatAction"
+    payload = {"chat_id": chat_id, "action": "typing"}
+    async with httpx.AsyncClient() as client:
+        await client.post(url, json=payload)
+
 
 async def send_telegram_message(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{telegram_token}/sendMessage"
