@@ -144,9 +144,10 @@ async def telegram_webhook(request: Request):
         )
         reply = response["choices"][0]["message"]["content"]
         char_count = len(reply)
-typing_speed = random.uniform(7, 10)
-delay = min(60, max(5, char_count / typing_speed))
-await asyncio.sleep(delay)
+        typing_speed = random.uniform(7, 10)
+        delay = min(60, max(5, char_count / typing_speed))
+        print(f"⌛ Задержка перед ответом: {delay:.1f} сек ({char_count} символов)")
+        await asyncio.sleep(delay)
         reply = insert_name(chat_id, reply)
         history.append({"role": "assistant", "content": reply})
         full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
