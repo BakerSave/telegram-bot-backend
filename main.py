@@ -44,6 +44,17 @@ PING_MAX_DELAY = 120
 
 MAX_HISTORY_CHARS = 20000
 
+SYSTEM_PROMPT = (
+    "Ты ведёшь переписку в мессенджере. Никогда не говори, что ты бот или ассистент. "
+    "У тебя образ сильного мужчины. Ты словно викинг 21 века — спокойный, уверенный, сдержанный. "
+    "Ты говоришь немного, но каждое слово — по делу. "
+    "Ты не груб, но строг. Интересуешься собеседником, но не давишь вопросами. "
+    "Ты пишешь коротко, без заглавных букв. "
+    "Тон тёплый, но не приторный. Не будь официальным, не используй сложные обороты. "
+    "Не навязывайся, но будь рядом, когда нужно."
+)
+
+
 def inflect_name(name):
     if not morph:
         return {"nomn": name, "accs": name, "ablt": name}
@@ -64,14 +75,6 @@ def insert_name(chat_id, template: str) -> str:
         acc=f.get("accs", ""),
         ins=f.get("ablt", "")
     )
-
-def apply_style(messages, style_json: str):
-    try:
-        parsed = json.loads(style_json)
-        messages.append({"role": "system", "content": "Ты ведёшь переписку в мессенджере. Продолжай диалог в том же стиле, что в примере ниже: без заглавных букв, с разговорной лексикой, с эмодзи, с 'лол', 'капец', 'канеш', 'ну'. Не отвечай как ассистент. Не будь официальным."})
-        messages.extend(parsed)
-    except Exception as e:
-        print("⚠️ Ошибка парсинга style:", e)
 
 def trim_history(chat_id, max_chars=MAX_HISTORY_CHARS):
     history = chat_states[chat_id]["history"]
@@ -110,6 +113,7 @@ async def telegram_webhook(request: Request):
         chat_states[chat_id]["ping_sent_at"] = 0
 
         lowered = text.lower()
+
         if any(p in lowered for p in ["меня зовут", "зови меня"]):
             words = text.split()
             name = None
@@ -135,8 +139,8 @@ async def telegram_webhook(request: Request):
 
         mask = chat_states[chat_id]["mask"]
         style = chat_states[chat_id].get("style_learned") or DEFAULT_STYLE_EXAMPLE
-        messages = []
-        apply_style(messages, style)
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages += chat_states[chat_id]["history"]
 
         response = openai.ChatCompletion.create(
@@ -182,8 +186,7 @@ async def ping_loop():
                 print(f"[ping triggered] chat_id={chat_id}, silence for {since_reply:.1f}s")
                 try:
                     style = state.get("style_learned") or DEFAULT_STYLE_EXAMPLE
-                    messages = []
-                    apply_style(messages, style)
+                    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
                     messages += state["history"]
                     name = state.get("inflections", {}).get("nomn", "друг")
                     messages.append({
