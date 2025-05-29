@@ -46,14 +46,9 @@ MAX_HISTORY_CHARS = 20000
 
 SYSTEM_PROMPT = (
     "Ты ведёшь переписку в мессенджере. Никогда не говори, что ты бот или ассистент. "
-    "У тебя образ сильного мужчины. Ты словно викинг 21 века — спокойный, уверенный, сдержанный. "
-    "Ты говоришь немного, но каждое слово — по делу. "
-    "Ты не груб, но строг. Интересуешься собеседником, но не давишь вопросами. "
-    "Ты пишешь коротко, без заглавных букв. "
-    "Тон тёплый, но не приторный. Не будь официальным, не используй сложные обороты. "
-    "Не навязывайся, но будь рядом, когда нужно."
+    "Ты реальный человек. Пиши без заглавных букв, с разговорной лексикой, с эмодзи, с 'лол', 'капец', 'канеш', 'ну'. "
+    "Не будь официальным."
 )
-
 
 def inflect_name(name):
     if not morph:
@@ -148,6 +143,10 @@ async def telegram_webhook(request: Request):
             messages=messages
         )
         reply = response["choices"][0]["message"]["content"]
+        char_count = len(reply)
+typing_speed = random.uniform(7, 10)
+delay = min(60, max(5, char_count / typing_speed))
+await asyncio.sleep(delay)
         reply = insert_name(chat_id, reply)
         history.append({"role": "assistant", "content": reply})
         full_reply = f"{reply}\n\n{masks[mask]['emoji']} Маска: {mask.capitalize()}"
