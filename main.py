@@ -96,6 +96,19 @@ async def telegram_webhook(request: Request):
         chat_id = payload["message"]["chat"]["id"]
         text = payload["message"].get("text", "")
 
+        media_keywords = {
+            "фото": "📷 Фото загружено.",
+            "видео": "🎥 Видео прикреплено.",
+            "голос": "🎤 Голосовое сообщение записано.",
+            "кружочек": "📹 Видеосообщение получено."
+        }
+
+        for keyword, fake_media in media_keywords.items():
+            if keyword in text.lower():
+                await send_telegram_message(chat_id, f"вот что ты просил 😉
+{fake_media}")
+                return {"ok": True}
+
         now = time.time()
         chat_states.setdefault(chat_id, {
             "history": [],
