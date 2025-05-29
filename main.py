@@ -171,7 +171,7 @@ async def telegram_webhook(request: Request):
         await asyncio.sleep(delay)
         reply = insert_name(chat_id, reply)
         history.append({"role": "assistant", "content": reply})
-        full_reply = f"{reply}
+        full_reply = f"{reply}\n\nМаска: {mask}"
 
 Маска: {mask}"
         await send_telegram_message(chat_id, full_reply)
